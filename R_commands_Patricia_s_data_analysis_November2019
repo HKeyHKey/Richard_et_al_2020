@@ -1,0 +1,78 @@
+BORROW=20
+library(car)
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#BiocManager::install("qvalue")
+library(qvalue)
+exonCore=read.csv('Results_exonCore.csv')
+ctrl=cbind(exonCore$log2.signal..1_Patricia_.HuEx.1_0.st.v2..CEL,exonCore$log2.signal..3_Patricia_.HuEx.1_0.st.v2..CEL,exonCore$log2.signal..5_Patricia_.HuEx.1_0.st.v2..CEL)
+exp=cbind(exonCore$log2.signal..2_Patricia_.HuEx.1_0.st.v2..CEL,exonCore$log2.signal..4_Patricia_.HuEx.1_0.st.v2..CEL,exonCore$log2.signal..6_Patricia_.HuEx.1_0.st.v2..CEL)
+ctrl_order=order(apply(ctrl,1,mean))
+exp_order=order(apply(exp,1,mean))
+N=length(ctrl_order)
+normality_ctrl=c()
+normality_exp=c()
+homogeneity=c()
+for (i in 1:N)
+{
+rank=c(1:N)[ctrl_order==i]
+borrowed_indices=ctrl_order[max(1,rank-BORROW):min(N,rank+BORROW)]
+borrowed=c()
+for (rep in 1:3)
+for (index in borrowed_indices)
+borrowed=c(borrowed,ctrl[index,rep])
+normality_ctrl=c(normality_ctrl,shapiro.test(borrowed)$p.value)
+borrowed_indices=exp_order[max(1,rank-BORROW):min(N,rank+BORROW)]
+borrowed=c()
+for (rep in 1:3)
+for (index in borrowed_indices)
+borrowed=c(borrowed,exp[index,rep])
+normality_exp=c(normality_exp,shapiro.test(borrowed)$p.value)
+homogeneity=c(homogeneity,leveneTest(c(ctrl[i,],exp[i,]),as.factor(c(rep(1,times=rep),rep(2,times=rep))))$Pr[1])
+}
+sink('Warnings.txt')
+if ((length(normality_ctrl[normality_ctrl<0.05])/length(normality_ctrl) > 0.05) | length(normality_exp[normality_exp<0.05])/length(normality_exp) > 0.05)
+print(c('Warning: p-values are imprecisely measured (normality problem).'))
+sink()
+
+if (length(homogeneity[homogeneity<0.05])/length(homogeneity) > 0.05)
+{
+homogeneous=FALSE
+} else homogeneous=TRUE
+
+pval=c()
+fc=c()
+gene_names=c()
+mRNA_names=c()
+for (i in 1:N)
+{
+pval=c(pval,t.test(ctrl[i,],exp[i,],var.equal=homogeneous)$p.value)
+fc=c(fc,mean(2^exp[i,])/mean(2^ctrl[i,])) # data was log2-transformed
+mRNA_names=c(mRNA_names,unlist(strsplit(as.character(exonCore$geneassignment[i]),' // '))[1])
+gene_names=c(gene_names,unlist(strsplit(as.character(exonCore$geneassignment[i]),' // '))[2])
+}
+qval=qvalue(pval)$qvalues
+
+CUTOFF_qval=0.01
+CUTOFF_fc=2
+x_unselected=fc[qval>=CUTOFF_qval | (fc>=1/CUTOFF_fc & fc<=CUTOFF_fc)]
+y_unselected=qval[qval>=CUTOFF_qval | (fc>=1/CUTOFF_fc & fc<=CUTOFF_fc)]
+x_selected=fc[qval<CUTOFF_qval & (fc<1/CUTOFF_fc | fc>CUTOFF_fc)]
+y_selected=qval[qval<CUTOFF_qval & (fc<1/CUTOFF_fc | fc>CUTOFF_fc)]
+mRNA_selected=mRNA_names[qval<CUTOFF_qval & (fc<1/CUTOFF_fc | fc>CUTOFF_fc)]
+gene_selected=gene_names[qval<CUTOFF_qval & (fc<1/CUTOFF_fc | fc>CUTOFF_fc)]
+
+setEPS()
+postscript('Volcano_plot_exonCore.eps',horizontal=FALSE,paper='special',width=6,height=6)
+plot(x_unselected,y_unselected,log='xy',xlim=c(1/16,16),ylim=c(1e-4,1),col='black',pch=16,axes=F,xlab='',ylab='')
+par(new=T)
+plot(x_selected[x_selected<1],y_selected[x_selected<1],log='xy',xlim=c(1/16,16),ylim=c(1e-4,1),col='red',pch=16,axes=F,xlab='',ylab='')
+par(new=T)
+plot(x_selected[x_selected>1],y_selected[x_selected>1],log='xy',xlim=c(1/16,16),ylim=c(1e-4,1),col='green',pch=16,axes=F,xlab='Fold-change (siSETX/siCtrl)',ylab='Adjusted p-value')
+axis(1,labels=c("1/16","1/8","1/4","1/2","1","2","4","8","16"),at=c(1/16,1/8,1/4,1/2,1,2,4,8,16))
+axis(2,labels=c("0.0001","0.001","0.01","0.1","1"),at=c(0.0001,0.001,0.01,0.1,1))
+dev.off()
+
+truc=list(gene_selected[order(x_selected)],mRNA_selected[order(x_selected)],x_selected[order(x_selected)],y_selected[order(x_selected)])
+names(truc)=c('Gene','mRNA','Fold-change (siSETX/siCtrl)','q-value')
+write.csv(as.data.frame(truc),file='Affected_genes_exonCore.csv')
