@@ -1,4 +1,4 @@
-Scripts and intermediary data for analyses published in Richard et al. (2020).
+Scripts and intermediary data for analyses published in [Richard et al. (2020)](https://pubmed.ncbi.nlm.nih.gov/32686621/).
 
 1. For Figure 1A: volcano plot tracing (after decompressing the 'Results_exonCore.csv.bz2' data file):
 
